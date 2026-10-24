@@ -5,3 +5,13 @@
 Everything in this repo is written in English: code, identifiers, comments,
 docs, commit messages, branch names, issues and pull requests. This holds even
 when the conversation with the owner happens in another language.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `uv sync` | Install dependencies into `.venv` |
+| `uv run pytest` | Run the Python tests |
+| `uv run azd serve` | Serve the player page on `127.0.0.1` (available from Task 10) |
+| `uv run azd analyze <session-dir> <recording>` | Analyze a recording (available from Task 9) |
+| `bash -lc 'source ~/.nvm/nvm.sh && node --test tests/js/'` | Run the JS tests |
