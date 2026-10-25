@@ -25,7 +25,8 @@ A1_PASS_MS, A1_WARN_MS = 1.0, 2.0
 ZONE2_PASS_MS, ZONE2_WARN_MS = 1.0, 2.0
 PLAUSIBLE_DISTANCE_M = 15.0  # beyond this, the owner probably typed feet
 DOMINANCE_PASS, DOMINANCE_WARN = 2.0, 1.4
-# A capture this far below the typical one may have locked onto another speaker.
+# A near-field capture this far below the typical one has likely locked onto another
+# speaker. It fails: for a lone zone 1 or zone 2 speaker nothing else cross-checks it.
 LOW_LEVEL_DB = 12.0
 
 
@@ -188,8 +189,8 @@ def _level(timeline: Timeline, session: SessionLog) -> Check:
     if not low:
         return Check("level", PASS, f"every capture within {LOW_LEVEL_DB:.0f} dB of the typical level")
     amount = f"{'up to ' if len(low) > 1 else ''}{max(low.values()):.0f} dB"
-    return Check("level", WARN, f"{_names(session, low)} captured {amount} below the other "
-                 "speakers: hold the phone closer / raise that zone's volume")
+    return Check("level", FAIL, f"{_names(session, low)} captured {amount} below the other "
+                 "speakers: hold the phone closer or match that zone's volume, then record again")
 
 
 def run_checks(assignment: Assignment, timeline: Timeline, answers: Answers,

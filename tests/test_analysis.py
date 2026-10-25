@@ -132,14 +132,16 @@ def test_zone1_neighbour_heard_instead_of_quiet_zone2_withholds_verdict():
     assert r.reliable is False
     c = check(r, "zone2_consistency")
     assert c.status == "fail" and "raise Zone 2 volume to match zone 1" in c.message
-    assert check(r, "level").status == "warn"
+    assert check(r, "level").status == "fail"
 
 
-def test_reviewer_quiet_zone2_scenario_warns_on_level_and_zone2():
+def test_reviewer_quiet_zone2_scenario_withholds_verdict():
     # The reviewer's scenario: zone 2 24 dB down and the neighbour at 1.5 m. Rear Right falls
-    # below the no-signal floor, so zone 2 timing cannot be cross-checked; both checks warn.
+    # below the no-signal floor, so nothing cross-checks zone 2; the quiet Rear Left capture
+    # (locked onto the zone 1 neighbour, delay -9.0 ms instead of +36.1 ms) fails the level check.
     r = run(SynthOptions(zone2_gain_db=-24.0, neighbours=neighbour_of_rear_left(1.5)))
     assert r.timeline.no_signal == ["rear-right"]
     assert check(r, "zone2_consistency").status == "warn"
     level = check(r, "level")
-    assert level.status == "warn" and level.message.startswith("Rear Left captured 18 dB below")
+    assert level.status == "fail" and level.message.startswith("Rear Left captured 18 dB below")
+    assert r.reliable is False

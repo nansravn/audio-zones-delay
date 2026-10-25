@@ -18,7 +18,8 @@ Before each measuring session:
 
 - Set Windows' default audio output to the receiver, and set that HDMI/receiver output device to **Stereo** (Sound control panel → the receiver device → Configure → Speaker setup → Stereo).
 - Set the Anthem to the plain stereo all-speaker mode you use for listening.
-- Set the Zone 2 volume close to zone 1's for the test. If zone 2 is much quieter, the phone at a zone 2 speaker can pick up a nearby zone 1 speaker instead, and the report then withholds or flags the result.
+- Set the Zone 2 volume close to zone 1's for the test. If zone 2 is much quieter, the phone at a zone 2 speaker can pick up a nearby zone 1 speaker instead, and the report then withholds the result.
+- Bypass any zone 2 delay device, or set all its outputs to 0 ms, while measuring. The zone 2 timing check expects every zone 2 speaker to emit together, so a session recorded through per-channel delays fails it by design.
 
 ## Workflow
 
@@ -63,7 +64,7 @@ uv run azd analyze <session-dir> <recording> [--device-latency-ms MS]
 - **Delay table.** One row per delay device output, counting every zone 2 speaker in the profile. Each row gives the delay needed, the value to dial in (device latency already subtracted), whether it fits a device whose maximum delay is 30 ms or 80 ms, and the leftover misalignment of each speaker on that output. A fit shown as "borderline" is within the uncertainty of the limit (or of zero), so it could go either way. Without distances in the profile you get a raw zone gap instead of per-speaker delays.
 - **Partial channels.** If some speakers on a channel had no signal in the recording, or were not measured in this session, the row is marked "partial" and names them. The value uses the speakers that were heard, so check it before trusting it. A channel with no measured speaker is listed as "not measured".
 - **Per-speaker detail.** Each speaker's emission time, its Anthem or seat distance, its arrival time at the seat (A1 for zone 1, A2 for zone 2), and capture quality. Zone 1 arrival times should all agree; when the zone 1 check fails, look for the A1 value that is off.
-- **Checks.** A list of pass, warn and fail checks on the recording: clock drift between phone and PC, the closure visit, spread between repeated signatures, zone 1 distance consistency, zone 2 timing consistency (zone 2 speakers share one amplifier, so they must emit together), distances that look like feet, coverage of the speakers, how clearly each speaker was heard, and captures much quieter than the rest.
+- **Checks.** A list of pass, warn and fail checks on the recording: clock drift between phone and PC, the closure visit, spread between repeated signatures, zone 1 distance consistency, zone 2 timing consistency (zone 2 speakers share one amplifier, so they must emit together), distances that look like feet, coverage of the speakers, how clearly each speaker was heard, and captures much quieter than the rest (a capture more than 12 dB below the others fails, because it has likely picked up another speaker).
 - **Verdict withheld.** When a check fails in a way that makes the numbers unreliable, no delay is given. The report shows the failing checks and diagnostics only; fix the cause (usually the recording or the room) and run the session again.
 
 The delay is only valid for the Anthem mode measured. Another mode, other processing or a different ARC setting can change timing, so measure again after changing it.

@@ -171,7 +171,7 @@ def profile_to_dict(p: RoomProfile) -> dict:
     }
 
 
-def _validate_signature(signature: dict) -> None:
+def _validate_signature(signature: dict, period_s: float) -> None:
     expected = {f.name for f in fields(SignatureParams)}
     if set(signature) != expected:
         raise ValueError(f"signature must have exactly the fields {sorted(expected)}, "
@@ -179,12 +179,23 @@ def _validate_signature(signature: dict) -> None:
     for name, v in signature.items():
         if not is_finite_number(v):
             raise ValueError(f"signature {name} must be a finite number, got {v!r}")
+    f_start, f_end = signature["f_start_hz"], signature["f_end_hz"]
+    if not 0 < f_start < f_end:
+        raise ValueError("signature frequencies must satisfy 0 < f_start_hz < f_end_hz, "
+                         f"got {f_start!r} and {f_end!r}")
+    duration, fade = signature["duration_s"], signature["fade_s"]
+    if not 0 < duration < period_s:
+        raise ValueError(f"signature duration_s must be above 0 and below the period "
+                         f"({period_s:g} s), got {duration!r}")
+    if not 0 <= fade < duration / 2:
+        raise ValueError(f"signature fade_s must be at least 0 and below half of duration_s, "
+                         f"got {fade!r}")
 
 
 def _validate_session(s: SessionLog) -> None:
     _check_count("signatures_per_visit", s.signatures_per_visit)
     _check_range("period_s", s.period_s, PERIOD_RANGE_S)
-    _validate_signature(s.signature)
+    _validate_signature(s.signature, s.period_s)
     for i, v in enumerate(s.visits):
         if v.index != i:
             raise ValueError(f"visits: index must be {i}, got {v.index!r}")

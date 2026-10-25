@@ -205,18 +205,26 @@ def quiet(tl, visit, db):
     return tl
 
 
-@pytest.mark.parametrize("db, status", [(-11.0, "pass"), (-13.0, "warn")])
-def test_level_flags_a_quiet_capture(db, status):
+@pytest.mark.parametrize("db, status", [(-11.0, "pass"), (-13.0, "fail")])
+def test_level_fails_a_quiet_capture(db, status):
     c = checks(quiet(clean_timeline(), 3, db))["level"]
     assert c.status == status
-    if status == "warn":
-        assert c.message == ("Rear Left captured 13 dB below the other speakers: "
-                             "hold the phone closer / raise that zone's volume")
+    if status == "fail":
+        assert c.message == ("Rear Left captured 13 dB below the other speakers: hold the phone "
+                             "closer or match that zone's volume, then record again")
+
+
+@pytest.mark.parametrize("visit", [1, 3])  # a zone 1 (Center) and a zone 2 (Rear Left) visit
+def test_level_fails_in_either_zone(visit):
+    tl = quiet(clean_timeline(), visit, -13.0)
+    result = run_checks(Assignment([], [], [], 1.0), tl, compute_answers(tl, session().profile), session())
+    assert next(c for c in result if c.key == "level").status == "fail"
+    assert not is_reliable(result)
 
 
 def test_level_names_every_quiet_speaker():
     c = checks(quiet(quiet(clean_timeline(), 3, -18.0), 4, -14.0))["level"]
-    assert c.status == "warn"
+    assert c.status == "fail"
     assert c.message.startswith("Rear Left, Rear Right captured up to 18 dB below")
 
 

@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,34 @@ def test_bad_signature_raises(mutate):
     mutate(d)
     with pytest.raises(ValueError, match="signature"):
         session_from_dict(d)
+
+
+FREQS = "signature frequencies must satisfy 0 < f_start_hz < f_end_hz"
+
+
+@pytest.mark.parametrize("field, value, message", [
+    ("f_start_hz", 0.0, FREQS), ("f_start_hz", -300.0, FREQS), ("f_start_hz", 12000.0, FREQS),
+    ("f_start_hz", 13000.0, FREQS), ("f_end_hz", 300.0, FREQS), ("f_end_hz", 0.0, FREQS),
+    ("duration_s", 0.0, "signature duration_s"), ("duration_s", -0.5, "signature duration_s"),
+    ("duration_s", 2.0, "signature duration_s"), ("duration_s", 2.5, "signature duration_s"),
+    ("fade_s", -0.001, "signature fade_s"), ("fade_s", 0.25, "signature fade_s"),
+    ("fade_s", 0.3, "signature fade_s"),
+])
+def test_signature_params_out_of_range_raise(field, value, message):
+    d = json.loads(FIXTURE.read_text())  # period_s 2.0, duration_s 0.5
+    d["signature"][field] = value
+    with pytest.raises(ValueError, match=re.escape(message)):
+        session_from_dict(d)
+
+
+@pytest.mark.parametrize("field, value", [
+    ("f_start_hz", 1.0), ("f_end_hz", 300.5), ("duration_s", 1.99), ("fade_s", 0.0),
+    ("fade_s", 0.249),
+])
+def test_signature_params_inside_the_range_are_accepted(field, value):
+    d = json.loads(FIXTURE.read_text())
+    d["signature"][field] = value
+    session_from_dict(d)
 
 
 @pytest.mark.parametrize("path, value", [
