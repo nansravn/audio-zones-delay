@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+
+import numpy as np
 
 from .answers import Answers
 from .assign import Assignment
@@ -18,7 +21,12 @@ CLOSURE_PASS_MS, CLOSURE_WARN_MS = 0.5, 1.0
 CLOSURE_PASS_SE, CLOSURE_WARN_SE = 3.0, 4.0
 REPEAT_PASS_MS, REPEAT_WARN_MS = 0.2, 0.5
 A1_PASS_MS, A1_WARN_MS = 1.0, 2.0
+# Zone 2 speakers share one pre-out and one amplifier, so they emit together.
+ZONE2_PASS_MS, ZONE2_WARN_MS = 1.0, 2.0
+MAX_DISTANCE_M = 15.0
 DOMINANCE_PASS, DOMINANCE_WARN = 2.0, 1.4
+# A capture this far below the typical one may have locked onto another speaker.
+LOW_LEVEL_DB = 12.0
 
 
 @dataclass(frozen=True)
@@ -101,6 +109,33 @@ def _zone1_consistency(answers: Answers) -> Check:
     return Check("zone1_consistency", status, message)
 
 
+def _zone2_consistency(timeline: Timeline, session: SessionLog) -> Check:
+    zone = {s.id: s.zone for s in session.profile.speakers}
+    e2 = [ms for k, ms in timeline.emission_ms.items() if zone[k] == 2]
+    if not e2:
+        return Check("zone2_consistency", WARN, "not checked: no zone 2 speaker has signal")
+    if len(e2) == 1:
+        return Check("zone2_consistency", WARN,
+                     "only one zone 2 speaker has signal: zone 2 timing not cross-checked")
+    spread = max(e2) - min(e2)
+    status = _grade(spread, ZONE2_PASS_MS, ZONE2_WARN_MS)
+    if status == FAIL:
+        return Check("zone2_consistency", FAIL,
+                     f"zone 2 speakers disagree by {spread:.1f} ms: a capture may have picked up "
+                     "a zone 1 speaker; raise Zone 2 volume to match zone 1 and record again")
+    return Check("zone2_consistency", status, f"zone 2 emission spread {spread:.2f} ms")
+
+
+def _distances(session: SessionLog) -> Check:
+    large = [(d, s.name) for s in session.profile.speakers
+             for d in (s.anthem_distance_m, s.seat_distance_m)
+             if d is not None and d > MAX_DISTANCE_M]
+    if not large:
+        return Check("distances", PASS, f"all distances at most {MAX_DISTANCE_M:.0f} m")
+    listed = ", ".join(f"{d:.1f} m ({name})" for d, name in large)
+    return Check("distances", WARN, f"distance {listed} looks too large — enter metres, not feet")
+
+
 def _coverage(assignment: Assignment, timeline: Timeline, session: SessionLog) -> Check:
     zone = {s.id: s.zone for s in session.profile.speakers}
     failures = [f"no zone {z} speaker has signal" for z in (1, 2)
@@ -140,6 +175,23 @@ def _dominance(timeline: Timeline, session: SessionLog) -> Check:
                  f"worst target dominance {d:.1f} ({_names(session, [worst.speaker_id])})")
 
 
+def _level(timeline: Timeline, session: SessionLog) -> Check:
+    levels = [v for v in timeline.visits if v.median_strength is not None]
+    if not levels:
+        return Check("level", WARN, "no captures to check")
+    typical = float(np.median([v.median_strength for v in levels]))
+    low: dict[str, float] = {}  # speaker -> dB below the typical capture
+    for v in levels:
+        db = 20 * math.log10(typical / v.median_strength)
+        if db > LOW_LEVEL_DB:
+            low[v.speaker_id] = max(db, low.get(v.speaker_id, db))
+    if not low:
+        return Check("level", PASS, f"every capture within {LOW_LEVEL_DB:.0f} dB of the typical level")
+    amount = f"{'up to ' if len(low) > 1 else ''}{max(low.values()):.0f} dB"
+    return Check("level", WARN, f"{_names(session, low)} captured {amount} below the other "
+                 "speakers: hold the phone closer / raise that zone's volume")
+
+
 def run_checks(assignment: Assignment, timeline: Timeline, answers: Answers,
                session: SessionLog) -> list[Check]:
     return [
@@ -147,8 +199,11 @@ def run_checks(assignment: Assignment, timeline: Timeline, answers: Answers,
         _closure(assignment, timeline, session),
         _repeat_spread(timeline, session),
         _zone1_consistency(answers),
+        _zone2_consistency(timeline, session),
+        _distances(session),
         _coverage(assignment, timeline, session),
         _dominance(timeline, session),
+        _level(timeline, session),
     ]
 
 

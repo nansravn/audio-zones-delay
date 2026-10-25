@@ -18,6 +18,7 @@ class VisitStats:
     mean_residual_ms: float
     spread_ms: float
     dominance: float
+    median_strength: float | None = None  # median detection strength of the visit
 
 
 @dataclass
@@ -118,6 +119,7 @@ def fit_timeline(assignment: Assignment, session: SessionLog,
             mean_residual_ms=float(r.mean()),
             spread_ms=float(r.std(ddof=1)) if r.size > 1 else 0.0,
             dominance=float(np.median([i.detection.dominance for i in alive[v]])),
+            median_strength=medians[v],
         ))
     return Timeline(emission_ms, emission_se, (b - 1.0) * 1e6, closure_residual, stats, no_signal,
                     closure_se)

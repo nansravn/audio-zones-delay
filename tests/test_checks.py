@@ -1,3 +1,4 @@
+import copy
 from dataclasses import replace
 from functools import cache
 
@@ -24,7 +25,7 @@ def clean_timeline():
         emission_se_ms={s.id: 0.01 for s in log.profile.speakers},
         drift_ppm=40.0,
         closure_residual_ms=0.1,
-        visits=[VisitStats(v.index, v.speaker_id, 5, 0.0, 0.05, 20.0) for v in log.visits],
+        visits=[VisitStats(v.index, v.speaker_id, 5, 0.0, 0.05, 20.0, 50.0) for v in log.visits],
         no_signal=[],
         closure_se_ms=0.05,
     )
@@ -39,18 +40,20 @@ def without(tl, *speakers):
     )
 
 
-def checks(tl=None, answers=None, assignment=None):
+def checks(tl=None, answers=None, assignment=None, log=None):
+    log = log or session()
     tl = tl or clean_timeline()
-    answers = answers or compute_answers(tl, session().profile)
+    answers = answers or compute_answers(tl, log.profile)
     assignment = assignment or Assignment([], [], [], 1.0)
-    return {c.key: c for c in run_checks(assignment, tl, answers, session())}
+    return {c.key: c for c in run_checks(assignment, tl, answers, log)}
 
 
 def test_clean_inputs_pass_in_order():
     tl = clean_timeline()
     result = run_checks(Assignment([], [], [], 1.0), tl, compute_answers(tl, session().profile), session())
     assert [c.key for c in result] == [
-        "drift", "closure", "repeat_spread", "zone1_consistency", "coverage", "dominance",
+        "drift", "closure", "repeat_spread", "zone1_consistency", "zone2_consistency", "distances",
+        "coverage", "dominance", "level",
     ]
     assert all(c.status == "pass" for c in result) and is_reliable(result)
 
@@ -164,3 +167,74 @@ def test_dominance_uses_worst_visit(dominance, status):
     assert c.status == status
     if status == "fail":
         assert "hold the phone closer to Center" in c.message
+
+
+def with_rear_right_at(tl, ms):
+    return replace(tl, emission_ms={**tl.emission_ms, "rear-right": ms})
+
+
+@pytest.mark.parametrize("spread, status", [(1.0, "pass"), (1.5, "warn"), (2.5, "fail")])
+def test_zone2_consistency_grades_emission_spread(spread, status):
+    tl = clean_timeline()
+    c = checks(with_rear_right_at(tl, tl.emission_ms["rear-left"] + spread))["zone2_consistency"]
+    assert c.status == status
+    if status == "fail":
+        assert c.message == ("zone 2 speakers disagree by 2.5 ms: a capture may have picked up a "
+                             "zone 1 speaker; raise Zone 2 volume to match zone 1 and record again")
+
+
+def test_zone2_consistency_works_in_raw_mode():
+    tl = with_rear_right_at(clean_timeline(), 5.0)
+    answers = Answers("raw", None, 41.3, {}, {}, {}, [], 0.1, None)
+    assert checks(tl, answers=answers)["zone2_consistency"].status == "fail"
+
+
+def test_zone2_consistency_warns_with_one_zone2_speaker():
+    c = checks(without(clean_timeline(), "rear-right"))["zone2_consistency"]
+    assert (c.status, c.message) == (
+        "warn", "only one zone 2 speaker has signal: zone 2 timing not cross-checked")
+
+
+def test_zone2_consistency_without_zone2_signal_warns():
+    c = checks(without(clean_timeline(), "rear-left", "rear-right"))["zone2_consistency"]
+    assert c.status == "warn" and "no zone 2 speaker has signal" in c.message
+
+
+def quiet(tl, visit, db):
+    tl.visits[visit] = replace(tl.visits[visit], median_strength=50.0 * 10 ** (db / 20))
+    return tl
+
+
+@pytest.mark.parametrize("db, status", [(-11.0, "pass"), (-13.0, "warn")])
+def test_level_flags_a_quiet_capture(db, status):
+    c = checks(quiet(clean_timeline(), 3, db))["level"]
+    assert c.status == status
+    if status == "warn":
+        assert c.message == ("Rear Left captured 13 dB below the other speakers: "
+                             "hold the phone closer / raise that zone's volume")
+
+
+def test_level_names_every_quiet_speaker():
+    c = checks(quiet(quiet(clean_timeline(), 3, -18.0), 4, -14.0))["level"]
+    assert c.status == "warn"
+    assert c.message.startswith("Rear Left, Rear Right captured up to 18 dB below")
+
+
+def profile_with(speaker, field, value):
+    log = copy.deepcopy(session())
+    setattr(log.profile.speaker(speaker), field, value)
+    return log
+
+
+@pytest.mark.parametrize("speaker, field", [("center", "anthem_distance_m"),
+                                            ("rear-right", "seat_distance_m")])
+def test_distance_in_feet_warns(speaker, field):
+    log = profile_with(speaker, field, 20.67)
+    c = checks(log=log)["distances"]
+    name = log.profile.speaker(speaker).name
+    assert (c.status, c.message) == (
+        "warn", f"distance 20.7 m ({name}) looks too large — enter metres, not feet")
+
+
+def test_distance_of_15_m_passes():
+    assert checks(log=profile_with("center", "anthem_distance_m", 15.0))["distances"].status == "pass"

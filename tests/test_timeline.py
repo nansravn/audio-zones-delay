@@ -67,3 +67,10 @@ def test_closure_se_is_small_and_positive_on_clean_session():
     log, _ = synth_session(synth.test_profile(), emissions_for(synth.test_profile()), opts)
     tl = fit_timeline(assignment_from(log, opts), log)
     assert 0.0 < tl.closure_se_ms < 0.2
+
+
+def test_visit_stats_report_median_strength():
+    opts = SynthOptions()
+    log, _ = synth_session(synth.test_profile(), emissions_for(synth.test_profile()), opts)
+    tl = fit_timeline(assignment_from(log, opts, strength=lambda a: 20.0 if a.visit == 3 else 50.0), log)
+    assert {v.visit: v.median_strength for v in tl.visits} == {0: 50.0, 1: 50.0, 2: 50.0, 3: 20.0, 4: 50.0, 5: 50.0}
