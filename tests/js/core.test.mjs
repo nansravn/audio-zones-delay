@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
   LEAD_S, TAIL_S, buildVisits, slotTime, nextFreeSlot, alignOrigin,
-  createSession, step, progress, toSessionLog,
+  createSession, step, progress, toSessionLog, FIELD_RULES, parseField,
 } from '../../src/audio_zones_delay/player/core.mjs';
 
 const fx = JSON.parse(readFileSync(new URL('../fixtures/session-example.json', import.meta.url), 'utf8'));
@@ -96,4 +96,39 @@ test('progress counts started signatures', () => {
   let {state} = step(fresh(), {type:'click', nowS: 5.5});
   assert.deepEqual(progress(state, 8.1), {current: 2, total: 5});   // slots 3,4 start at 6.0 and 8.0
   assert.deepEqual(progress(fresh(), 8.1), {current: 0, total: 5});
+});
+test('parseField accepts numbers inside the model limits', () => {
+  assert.deepEqual(parseField(' 343 ', FIELD_RULES.speed_of_sound_m_s), {value: 343});
+  assert.deepEqual(parseField('300', FIELD_RULES.speed_of_sound_m_s), {value: 300});
+  assert.deepEqual(parseField('0', FIELD_RULES.device_latency_ms), {value: 0});
+  assert.deepEqual(parseField('1000', FIELD_RULES.device_latency_ms), {value: 1000});
+  assert.deepEqual(parseField('20', FIELD_RULES.signatures_per_visit), {value: 20});
+  assert.deepEqual(parseField('2.5', FIELD_RULES.period_s), {value: 2.5});
+  assert.deepEqual(parseField('50', FIELD_RULES.distance_m), {value: 50});
+});
+test('parseField: an empty optional field is null, an empty required field is an error', () => {
+  assert.deepEqual(parseField('', FIELD_RULES.distance_m), {value: null});
+  assert.deepEqual(parseField('  ', FIELD_RULES.distance_m), {value: null});
+  for (const key of ['speed_of_sound_m_s', 'device_latency_ms', 'signatures_per_visit', 'period_s']) {
+    assert.ok(parseField('', FIELD_RULES[key]).error, key);
+    assert.equal(parseField('', FIELD_RULES[key]).value, undefined, key);
+  }
+});
+test('parseField rejects values the model rejects', () => {
+  const bad = [
+    ['speed_of_sound_m_s', ['0', '299.9', '400.1', 'abc', 'Infinity', 'NaN']],
+    ['device_latency_ms', ['-1', '1000.1', 'Infinity']],
+    ['signatures_per_visit', ['4.5', '2', '21']],
+    ['period_s', ['0.99', '10.01', 'Infinity']],
+    ['distance_m', ['0', '-2', '50.01', 'Infinity']],
+  ];
+  for (const [key, values] of bad) {
+    for (const text of values) {
+      const result = parseField(text, FIELD_RULES[key]);
+      assert.ok(result.error, `${key} ${text}`);
+      assert.equal(result.value, undefined, `${key} ${text}`);
+    }
+  }
+  assert.match(parseField('4.5', FIELD_RULES.signatures_per_visit).error, /whole number from 3 to 20/);
+  assert.match(parseField('0', FIELD_RULES.distance_m).error, /above 0 and at most 50, or leave empty/);
 });

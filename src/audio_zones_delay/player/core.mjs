@@ -3,6 +3,32 @@
 export const LEAD_S = 0.25;
 export const TAIL_S = 0.3;
 
+// Setup form limits, the same as the Python model's (model.py).
+export const FIELD_RULES = {
+  signatures_per_visit: {min: 3, max: 20, integer: true},
+  period_s: {min: 1, max: 10},
+  speed_of_sound_m_s: {min: 300, max: 400},
+  device_latency_ms: {min: 0, max: 1000},
+  distance_m: {min: 0, max: 50, minExclusive: true, optional: true},
+};
+
+// Parse a number field's text: {value} when valid (null for an empty optional
+// field), otherwise {error}. An invalid field never turns into 0.
+export function parseField(text, rule) {
+  const trimmed = String(text).trim();
+  if (trimmed === '') return rule.optional ? {value: null} : {error: 'Required.'};
+  const value = Number(trimmed);
+  const ok = Number.isFinite(value)
+    && (!rule.integer || Number.isInteger(value))
+    && (rule.minExclusive ? value > rule.min : value >= rule.min)
+    && value <= rule.max;
+  if (ok) return {value};
+  const kind = rule.integer ? 'a whole number' : 'a number';
+  const range = rule.minExclusive
+    ? `above ${rule.min} and at most ${rule.max}` : `from ${rule.min} to ${rule.max}`;
+  return {error: `Enter ${kind} ${range}${rule.optional ? ', or leave empty' : ''}.`};
+}
+
 export function buildVisits(profile) {
   const measured = profile.speakers.filter((s) => s.measured);
   if (measured.length === 0) throw new Error('profile has no measured speakers');

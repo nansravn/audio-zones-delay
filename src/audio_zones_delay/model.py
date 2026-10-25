@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import json
+import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
+from .signature import SignatureParams
+
 _ID_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+# Accepted ranges; the player's setup form uses the same limits (player/core.mjs).
+SPEED_OF_SOUND_RANGE_M_S = (300.0, 400.0)
+DEVICE_LATENCY_RANGE_MS = (0.0, 1000.0)
+SIGNATURES_PER_VISIT_RANGE = (3, 20)
+PERIOD_RANGE_S = (1.0, 10.0)
+MAX_DISTANCE_M = 50.0
 
 
 @dataclass
@@ -74,6 +84,22 @@ class SessionLog:
         return used
 
 
+def is_finite_number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _check_range(name: str, v, bounds: tuple[float, float]) -> None:
+    lo, hi = bounds
+    if not (is_finite_number(v) and lo <= v <= hi):
+        raise ValueError(f"{name} must be a number from {lo:g} to {hi:g}, got {v!r}")
+
+
+def _check_count(name: str, v) -> None:
+    lo, hi = SIGNATURES_PER_VISIT_RANGE
+    if not (isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi):
+        raise ValueError(f"{name} must be a whole number from {lo} to {hi}, got {v!r}")
+
+
 def _validate_profile(p: RoomProfile) -> None:
     seen: set[str] = set()
     for s in p.speakers:
@@ -86,12 +112,13 @@ def _validate_profile(p: RoomProfile) -> None:
             raise ValueError(f"speaker {s.id!r}: zone must be 1 or 2, got {s.zone!r}")
         for name in ("anthem_distance_m", "seat_distance_m"):
             v = getattr(s, name)
-            if v is not None and not v > 0:
-                raise ValueError(f"speaker {s.id!r}: {name} must be None or > 0, got {v!r}")
-    if p.signatures_per_visit < 3:
-        raise ValueError(f"signatures_per_visit must be >= 3, got {p.signatures_per_visit!r}")
-    if p.period_s < 1.0:
-        raise ValueError(f"period_s must be >= 1.0, got {p.period_s!r}")
+            if v is not None and not (is_finite_number(v) and 0 < v <= MAX_DISTANCE_M):
+                raise ValueError(f"speaker {s.id!r}: {name} must be empty or a number above 0 "
+                                 f"and at most {MAX_DISTANCE_M:g}, got {v!r}")
+    _check_range("speed_of_sound_m_s", p.speed_of_sound_m_s, SPEED_OF_SOUND_RANGE_M_S)
+    _check_range("device_latency_ms", p.device_latency_ms, DEVICE_LATENCY_RANGE_MS)
+    _check_count("signatures_per_visit", p.signatures_per_visit)
+    _check_range("period_s", p.period_s, PERIOD_RANGE_S)
 
 
 def profile_from_dict(d: dict) -> RoomProfile:
@@ -144,7 +171,20 @@ def profile_to_dict(p: RoomProfile) -> dict:
     }
 
 
+def _validate_signature(signature: dict) -> None:
+    expected = {f.name for f in fields(SignatureParams)}
+    if set(signature) != expected:
+        raise ValueError(f"signature must have exactly the fields {sorted(expected)}, "
+                         f"got {sorted(signature)}")
+    for name, v in signature.items():
+        if not is_finite_number(v):
+            raise ValueError(f"signature {name} must be a finite number, got {v!r}")
+
+
 def _validate_session(s: SessionLog) -> None:
+    _check_count("signatures_per_visit", s.signatures_per_visit)
+    _check_range("period_s", s.period_s, PERIOD_RANGE_S)
+    _validate_signature(s.signature)
     for i, v in enumerate(s.visits):
         if v.index != i:
             raise ValueError(f"visits: index must be {i}, got {v.index!r}")

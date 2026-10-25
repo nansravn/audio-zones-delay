@@ -48,6 +48,9 @@ body {
 .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px; }
 .reason { color: #f0b050; font-weight: 600; }
 .error { color: var(--red); font-weight: 600; }
+.setup input.invalid { border-color: var(--red); }
+.field-error { display: block; color: var(--red); font-size: .8rem; max-width: 14em; }
+.field-error:empty { display: none; }
 .ok { color: var(--green); }
 
 /* Session */

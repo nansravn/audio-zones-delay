@@ -10,7 +10,7 @@ from pathlib import Path
 from .analysis import analyze
 from .assign import AlignmentError
 from .audio_io import RecordingError, load_recording
-from .model import load_session
+from .model import DEVICE_LATENCY_RANGE_MS, is_finite_number, load_session
 from .report import render_html, render_summary
 
 
@@ -20,6 +20,10 @@ def _fail(message: str) -> int:
 
 
 def _cmd_analyze(args: argparse.Namespace) -> int:
+    latency = args.device_latency_ms
+    lo, hi = DEVICE_LATENCY_RANGE_MS
+    if latency is not None and not (is_finite_number(latency) and lo <= latency <= hi):
+        return _fail(f"--device-latency-ms must be a number from {lo:g} to {hi:g}, got {latency:g}")
     session_dir = Path(args.session_dir)
     try:
         session = load_session(session_dir / "session.json")
@@ -27,8 +31,8 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
         return _fail(f"no session.json in {session_dir}")
     except (ValueError, TypeError, AttributeError, json.JSONDecodeError) as e:
         return _fail(f"invalid session.json in {session_dir}: {e}")
-    if args.device_latency_ms is not None:
-        session.profile.device_latency_ms = args.device_latency_ms
+    if latency is not None:
+        session.profile.device_latency_ms = latency
     try:
         recording = load_recording(Path(args.recording))
         result = analyze(session, recording)

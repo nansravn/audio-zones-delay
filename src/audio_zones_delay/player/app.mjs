@@ -3,8 +3,10 @@
 // Web Audio and the HTTP API.
 
 import {
+  FIELD_RULES,
   alignOrigin,
   createSession,
+  parseField,
   progress,
   step,
   toSessionLog,
@@ -61,9 +63,29 @@ function setProblem(key, text) {
 let profile = null;
 let label = '';
 const ui = {};
+const invalid = new Map(); // number input element -> error text
 
-function numberOrNull(value) {
-  return value.trim() === '' ? null : Number(value);
+// A number input that only commits valid values; an invalid one shows an
+// inline error and blocks Save and Start until it is fixed.
+function numberInput(initial, rule, commit, props = {}) {
+  const error = h('span', {class: 'field-error'});
+  const input = h('input', {type: 'number', step: 'any', value: initial ?? '', ...props});
+  const validate = () => {
+    const result = parseField(input.value, rule);
+    if ('error' in result) invalid.set(input, result.error);
+    else invalid.delete(input);
+    input.classList.toggle('invalid', 'error' in result);
+    input.setAttribute('aria-invalid', String('error' in result));
+    error.textContent = result.error || '';
+    return result;
+  };
+  input.addEventListener('input', () => {
+    const result = validate();
+    if (!('error' in result)) commit(result.value);
+    if (ui.start) updateStart();
+  });
+  if (!input.disabled) validate();
+  return [input, error];
 }
 
 function nextSpeakerId() {
@@ -83,8 +105,12 @@ function startBlocker() {
 }
 
 function updateStart() {
-  const reason = startBlocker();
+  for (const el of [...invalid.keys()]) {
+    if (!el.isConnected) invalid.delete(el);
+  }
+  const reason = invalid.size > 0 ? 'Fix the highlighted fields.' : startBlocker();
   ui.start.disabled = reason !== null || ui.starting === true;
+  ui.save.disabled = invalid.size > 0;
   ui.reason.textContent = reason || '';
 }
 
@@ -120,11 +146,9 @@ function speakerRow(s, index) {
     type: 'checkbox', checked: s.measured, 'aria-label': 'Measured',
     onchange: (e) => { s.measured = e.target.checked; updateStart(); },
   });
-  const distance = (field, enabled, name) => h('input', {
-    type: 'number', min: '0', step: 'any', value: s[field] ?? '',
-    disabled: !enabled, 'aria-label': name,
-    oninput: (e) => { s[field] = numberOrNull(e.target.value); },
-  });
+  const distance = (field, enabled, name) => numberInput(
+    s[field], FIELD_RULES.distance_m, (value) => { s[field] = value; },
+    {min: '0', max: '50', disabled: !enabled, 'aria-label': name});
   const channel = h('input', {
     type: 'text', value: s.delay_channel ?? '', disabled: s.zone !== 2,
     'aria-label': 'Delay channel', size: 6,
@@ -154,10 +178,10 @@ function renderSpeakers() {
 }
 
 function numberField(text, field, props = {}) {
-  return h('label', {}, text, h('input', {
-    type: 'number', step: 'any', value: profile[field], ...props,
-    oninput: (e) => { profile[field] = Number(e.target.value); },
-  }));
+  const rule = FIELD_RULES[field];
+  const [input, error] = numberInput(profile[field], rule, (value) => { profile[field] = value; },
+    {min: String(rule.min), max: String(rule.max), ...props});
+  return h('label', {}, text, input, error);
 }
 
 function buildSetup(root) {
@@ -191,10 +215,10 @@ function buildSetup(root) {
         type: 'text', value: label, placeholder: 'e.g. All Channel Stereo, ARC on',
         oninput: (e) => { label = e.target.value; },
       })),
-      numberField('Signatures per visit', 'signatures_per_visit', {min: '3', step: '1'}),
-      numberField('Period (s)', 'period_s', {min: '1'}),
-      numberField('Speed of sound (m/s)', 'speed_of_sound_m_s', {min: '1'}),
-      numberField('Device latency (ms)', 'device_latency_ms', {min: '0'})),
+      numberField('Signatures per visit', 'signatures_per_visit', {step: '1'}),
+      numberField('Period (s)', 'period_s'),
+      numberField('Speed of sound (m/s)', 'speed_of_sound_m_s'),
+      numberField('Device latency (ms)', 'device_latency_ms')),
     h('h2', {}, 'Phone recording tips'),
     h('ul', {},
       h('li', {}, 'Start the recorder first, and keep it running for the whole session.'),
@@ -213,6 +237,10 @@ function showError(text) {
 async function saveProfile() {
   showError('');
   ui.status.textContent = '';
+  if (invalid.size > 0) {
+    showError('Fix the highlighted fields first.');
+    return false;
+  }
   try {
     await api('PUT', '/api/profile', profile);
     ui.status.className = 'ok';

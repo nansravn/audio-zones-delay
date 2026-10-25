@@ -37,6 +37,24 @@ def test_device_latency_override(tmp_path, capsys):
     assert (d / "session.json").read_text() == before
 
 
+@pytest.mark.parametrize("value", ["nan", "inf", "-1", "-0.5", "1000.5"])
+def test_invalid_device_latency_exits_1(tmp_path, capsys, value):
+    d, rec = make_session_dir(tmp_path)
+    assert main(["analyze", str(d), str(rec), f"--device-latency-ms={value}"]) == 1
+    err = capsys.readouterr().err
+    assert "--device-latency-ms" in err and len(err.strip().splitlines()) == 1
+    assert not (d / "report.html").exists()
+
+
+def test_zero_speed_of_sound_exits_1(tmp_path, capsys):
+    d, rec = make_session_dir(tmp_path)
+    session = json.loads((d / "session.json").read_text())
+    session["profile"]["speed_of_sound_m_s"] = 0  # what an emptied form field used to send
+    (d / "session.json").write_text(json.dumps(session))
+    assert main(["analyze", str(d), str(rec)]) == 1
+    assert "speed_of_sound_m_s" in capsys.readouterr().err
+
+
 def test_withheld_exits_2(tmp_path):
     d, rec = make_session_dir(tmp_path, SynthOptions(glitch_after_visit=2, glitch_ms=1.5))
     assert main(["analyze", str(d), str(rec)]) == 2
