@@ -69,8 +69,16 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+class _Parser(argparse.ArgumentParser):
+    """Usage errors exit 1: exit code 2 means "verdict withheld"."""
+
+    def error(self, message: str):
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="azd", description="Audio zones delay tool")
+    parser = _Parser(prog="azd", description="Audio zones delay tool")
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("analyze", help="analyze a recording of a session")
     p.add_argument("session_dir")

@@ -46,6 +46,15 @@ def test_invalid_device_latency_exits_1(tmp_path, capsys, value):
     assert not (d / "report.html").exists()
 
 
+def test_non_numeric_device_latency_exits_1_not_2(tmp_path, capsys):
+    # Exit code 2 means "verdict withheld", so a usage error must not use it.
+    d, rec = make_session_dir(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        main(["analyze", str(d), str(rec), "--device-latency-ms", "abc"])
+    assert exc.value.code == 1
+    assert "--device-latency-ms" in capsys.readouterr().err
+
+
 def test_zero_speed_of_sound_exits_1(tmp_path, capsys):
     d, rec = make_session_dir(tmp_path)
     session = json.loads((d / "session.json").read_text())

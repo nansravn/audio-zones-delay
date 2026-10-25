@@ -371,16 +371,16 @@ function render() {
     dom.big.classList.add('done');
     dom.big.textContent = 'DONE';
     const id = S.sessionId;
+    const closure = speakerLabel(st.visits[total - 1].speaker_id);
+    dom.line1.textContent = `Press R to redo ${closure} before stopping the recorder.`;
     if (S.finalSave === 'ok') {
-      dom.line1.textContent = `Stop the phone recording. Session saved as ${id}.`;
+      dom.line2.textContent = `Stop the phone recording. Session saved as ${id}.`;
     } else if (S.finalSave === 'saving') {
-      dom.line1.textContent = 'Saving…';
+      dom.line2.textContent = 'Saving…';
     } else {
-      dom.line1.textContent = `Session not saved: ${S.finalSave.replace(/^failed: /, '')}`;
+      dom.line2.textContent = `Session not saved: ${S.finalSave.replace(/^failed: /, '')}`;
     }
     dom.command.textContent = `uv run azd analyze data/sessions/${id} <path-to-recording>`;
-    const closure = speakerLabel(st.visits[total - 1].speaker_id);
-    dom.line2.textContent = `Press R to redo ${closure}`;
     dom.hint.textContent = 'Copy the recording to the PC, then run the command above.';
   }
 }
@@ -429,7 +429,9 @@ async function startSession() {
     if (!(await saveProfile())) throw new Error('save the profile first');
     await ctx.resume();
     keepAlive = ctx.createConstantSource();
-    keepAlive.offset.value = 0;
+    // About -120 dBFS, inaudible: Chromium suspends a sink after 30 s of exact zeros,
+    // and resuming shifts the output timing.
+    keepAlive.offset.value = 1e-6;
     keepAlive.connect(ctx.destination);
     keepAlive.start();
 
