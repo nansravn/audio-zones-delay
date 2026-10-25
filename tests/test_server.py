@@ -139,3 +139,12 @@ def test_unknown_route_and_method(server):
 def test_deeply_nested_json_is_400(server):
     r = request(server, "PUT", "/api/profile", raw=b"[" * 200000)
     assert r.status == 400 and "error" in json.loads(r.read())
+
+
+def test_player_assets_are_served(server):
+    page = request(server, "GET", "/")
+    assert b"/static/app.mjs" in page.read()
+    app = request(server, "GET", "/static/app.mjs")
+    assert app.status == 200
+    assert app.getheader("Content-Type").startswith("text/javascript")
+    assert b"from './core.mjs'" in app.read()
