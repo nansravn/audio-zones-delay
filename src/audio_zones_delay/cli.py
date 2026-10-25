@@ -45,6 +45,26 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     return 0 if result.reliable else 2
 
 
+def _cmd_serve(args: argparse.Namespace) -> int:
+    from .server import make_server
+
+    data_dir = Path(args.data_dir)
+    try:
+        server = make_server(data_dir, port=args.port)
+    except OSError as e:
+        return _fail(f"cannot start the server on port {args.port}: {e}")
+    port = server.server_address[1]
+    print(f"Open http://localhost:{port}/ in the Windows browser (Chrome or Edge).")
+    print(f"Profiles and sessions are stored in {data_dir.resolve()}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print()
+    finally:
+        server.server_close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="azd", description="Audio zones delay tool")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -54,6 +74,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--device-latency-ms", type=float, default=None,
                    help="override the profile's delay device latency")
     p.set_defaults(func=_cmd_analyze)
+    p = sub.add_parser("serve", help="serve the player page on localhost")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--data-dir", default="data")
+    p.set_defaults(func=_cmd_serve)
     return parser
 
 
