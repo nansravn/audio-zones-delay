@@ -87,6 +87,16 @@ def test_missing_closure_after_ambiguous_shift_suggests_late_start():
                          "or stopped early; record the whole session")
 
 
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_silent_closure_speaker_fails_naming_it(ambiguous):
+    tl = replace(without(clean_timeline(), "front-left"), closure_residual_ms=None, closure_se_ms=None)
+    c = checks(tl, assignment=Assignment([], [], [], 1.0, shift_ambiguous=ambiguous))["closure"]
+    assert c.status == "fail"
+    assert c.message == ("closure speaker Front Left has no signal in this mode, so playback "
+                         "stability cannot be checked; start the speaker list with a speaker that "
+                         "plays in this mode and record again")
+
+
 @pytest.mark.parametrize("spread, status", [(0.2, "pass"), (0.3, "warn"), (0.6, "fail")])
 def test_repeat_spread_uses_worst_visit(spread, status):
     tl = clean_timeline()
@@ -97,11 +107,19 @@ def test_repeat_spread_uses_worst_visit(spread, status):
 
 @pytest.mark.parametrize("spread, status", [(1.0, "pass"), (1.5, "warn"), (2.5, "fail")])
 def test_zone1_consistency_grades_a1_spread(spread, status):
-    answers = Answers("full", 41.3, None, {}, {}, {}, [], 0.1, spread)
+    a1 = {"front-left": 52.0, "center": 52.0 + spread}
+    answers = Answers("full", 41.3, None, a1, {}, {}, [], 0.1, spread)
     c = checks(answers=answers)["zone1_consistency"]
     assert c.status == status
     if status == "fail":
         assert "check the Anthem distances entered" in c.message
+
+
+def test_zone1_consistency_warns_with_one_zone1_speaker():
+    answers = Answers("full", 41.3, None, {"front-left": 52.0}, {}, {}, [], 0.1, 0.0)
+    c = checks(answers=answers)["zone1_consistency"]
+    assert (c.status, c.message) == (
+        "warn", "only one zone 1 speaker has signal: Anthem distances not cross-checked")
 
 
 def test_zone1_consistency_warns_in_raw_mode():

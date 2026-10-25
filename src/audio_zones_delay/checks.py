@@ -49,9 +49,16 @@ def _drift(timeline: Timeline) -> Check:
     return Check("drift", status, message)
 
 
-def _closure(assignment: Assignment, timeline: Timeline) -> Check:
+def _closure(assignment: Assignment, timeline: Timeline, session: SessionLog) -> Check:
     r = timeline.closure_residual_ms
     if r is None:
+        closure = next((v for v in session.visits if v.closure), None)
+        if closure is not None and closure.speaker_id in timeline.no_signal:
+            # Re-recording the same way would not help: the speaker is silent in this mode.
+            return Check("closure", FAIL, f"closure speaker {_names(session, [closure.speaker_id])} "
+                         "has no signal in this mode, so playback stability cannot be checked; "
+                         "start the speaker list with a speaker that plays in this mode and "
+                         "record again")
         if assignment.shift_ambiguous:
             return Check("closure", FAIL, "closure visit not captured: the phone may have started "
                          "recording late or stopped early; record the whole session")
@@ -83,6 +90,9 @@ def _zone1_consistency(answers: Answers) -> Check:
             return Check("zone1_consistency", WARN,
                          "not checked: no zone 1 or no zone 2 speaker has signal")
         return Check("zone1_consistency", WARN, "raw mode: enter distances for per-speaker delays")
+    if len(answers.a1_ms) < 2:
+        return Check("zone1_consistency", WARN,
+                     "only one zone 1 speaker has signal: Anthem distances not cross-checked")
     spread = answers.a1_spread_ms
     status = _grade(spread, A1_PASS_MS, A1_WARN_MS)
     message = f"zone 1 arrival spread {spread:.2f} ms"
@@ -134,7 +144,7 @@ def run_checks(assignment: Assignment, timeline: Timeline, answers: Answers,
                session: SessionLog) -> list[Check]:
     return [
         _drift(timeline),
-        _closure(assignment, timeline),
+        _closure(assignment, timeline, session),
         _repeat_spread(timeline, session),
         _zone1_consistency(answers),
         _coverage(assignment, timeline, session),

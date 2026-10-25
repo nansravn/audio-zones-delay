@@ -52,6 +52,20 @@ def test_phone_started_late_withholds_verdict():
     assert "started recording late or stopped early" in check(r, "closure").message
 
 
+def test_silent_closure_speaker_withholds_verdict():
+    r = run(SynthOptions(silent_speakers=frozenset({"front-left"})))
+    assert r.reliable is False
+    assert check(r, "closure").status == "fail" and "no signal" in check(r, "closure").message
+
+
+def test_single_zone1_speaker_warns_but_stays_reliable():
+    r = run(SynthOptions(silent_speakers=frozenset({"center", "surround-back-left"})))
+    assert r.reliable is True
+    c = check(r, "zone1_consistency")
+    assert (c.status, c.message) == (
+        "warn", "only one zone 1 speaker has signal: Anthem distances not cross-checked")
+
+
 def test_all_zone2_silent_withholds_verdict():
     r = run(SynthOptions(silent_speakers=frozenset({"rear-left", "rear-right"})))
     assert not r.reliable and check(r, "coverage").status == "fail"
