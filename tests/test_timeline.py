@@ -59,3 +59,11 @@ def test_missing_closure_gives_none():
     log, _ = synth_session(synth.test_profile(), emissions_for(synth.test_profile()), opts)
     tl = fit_timeline(assignment_from(log, opts, keep=lambda a: a.visit != 5), log)
     assert tl.closure_residual_ms is None
+    assert tl.closure_se_ms is None
+
+
+def test_closure_se_is_small_and_positive_on_clean_session():
+    opts = SynthOptions(drift_ppm=40.0)
+    log, _ = synth_session(synth.test_profile(), emissions_for(synth.test_profile()), opts)
+    tl = fit_timeline(assignment_from(log, opts), log)
+    assert 0.0 < tl.closure_se_ms < 0.2

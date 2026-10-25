@@ -12,7 +12,8 @@ import numpy as np
 from scipy.io import wavfile
 from scipy.signal import fftconvolve
 
-from audio_zones_delay.audio_io import ffmpeg_path
+from audio_zones_delay.analysis import AnalysisResult, analyze
+from audio_zones_delay.audio_io import ffmpeg_path, load_recording
 from audio_zones_delay.model import (
     Attempt, RoomProfile, SessionLog, Speaker, build_visits,
 )
@@ -189,3 +190,18 @@ def encode_m4a(samples: np.ndarray, sample_rate: int, path: Path, out_rate: int 
                         "-c:a", "aac", "-b:a", "128k", "-ar", str(out_rate), str(path)],
                        check=True)
     return path
+
+
+def run_analysis(opts: SynthOptions, profile: RoomProfile | None = None,
+                 via_m4a: Path | None = None) -> AnalysisResult:
+    """Synthesize a session and analyze it.
+
+    The true emissions always come from ``test_profile()``; ``profile`` is what
+    the owner entered. With ``via_m4a`` (a directory), the recording goes
+    through AAC at 44.1 kHz first.
+    """
+    p = profile or test_profile()
+    log, rec = synth_session(p, emissions_for(test_profile()), opts)
+    if via_m4a:
+        rec = load_recording(encode_m4a(rec, 48000, via_m4a / "r.m4a", out_rate=44100))
+    return analyze(log, rec)

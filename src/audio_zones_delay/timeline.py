@@ -28,6 +28,7 @@ class Timeline:
     closure_residual_ms: float | None
     visits: list[VisitStats]
     no_signal: list[str]
+    closure_se_ms: float | None = None  # stage-1 standard error of closure_residual_ms
 
 
 def _fit(s: np.ndarray, t: np.ndarray, groups: np.ndarray, n_groups: int):
@@ -77,14 +78,18 @@ def fit_timeline(assignment: Assignment, session: SessionLog,
     b, c, cov, resid = _fit(slot, time, groups1, len(order))
 
     closure = next((v for v in session.visits if v.closure), None)
-    closure_residual = None
+    closure_residual = closure_se = None
     speakers = [visit_speaker[v] for v in order]
     first_of: dict[str, int] = {}
     for v in session.visits:
         if not v.closure:
             first_of.setdefault(v.speaker_id, v.index)
     if closure is not None and closure.index in visit_pos and first_of.get(closure.speaker_id) in visit_pos:
-        closure_residual = (c[visit_pos[closure.index]] - c[visit_pos[first_of[closure.speaker_id]]]) * 1000.0
+        pc, pf = visit_pos[closure.index], visit_pos[first_of[closure.speaker_id]]
+        closure_residual = float((c[pc] - c[pf]) * 1000.0)
+        # cov index 0 is the drift, so intercept p sits at p + 1.
+        var = cov[pc + 1, pc + 1] + cov[pf + 1, pf + 1] - 2.0 * cov[pc + 1, pf + 1]
+        closure_se = float(np.sqrt(max(var, 0.0)) / b * 1000.0)
         # Stage 2: one intercept per speaker, the closure visit shares the first one's.
         names = list(dict.fromkeys(speakers))
         groups2 = np.array([names.index(visit_speaker[v]) for v in visit_of])
@@ -114,4 +119,5 @@ def fit_timeline(assignment: Assignment, session: SessionLog,
             spread_ms=float(r.std(ddof=1)) if r.size > 1 else 0.0,
             dominance=float(np.median([i.detection.dominance for i in alive[v]])),
         ))
-    return Timeline(emission_ms, emission_se, (b - 1.0) * 1e6, closure_residual, stats, no_signal)
+    return Timeline(emission_ms, emission_se, (b - 1.0) * 1e6, closure_residual, stats, no_signal,
+                    closure_se)
