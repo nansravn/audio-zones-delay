@@ -14,4 +14,4 @@ when the conversation with the owner happens in another language.
 | `uv run pytest` | Run the Python tests |
 | `uv run azd serve` | Serve the player page on `127.0.0.1` (available from Task 10) |
 | `uv run azd analyze <session-dir> <recording>` | Analyze a recording (available from Task 9) |
-| `bash -lc 'source ~/.nvm/nvm.sh && node --test tests/js/'` | Run the JS tests |
+| `node --test "tests/js/*.test.mjs"` | Run the JS tests (Node ≥ 20 on PATH, e.g. via nvm) |
