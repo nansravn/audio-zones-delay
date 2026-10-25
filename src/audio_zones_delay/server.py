@@ -23,7 +23,11 @@ from .model import (
 from .signature import SIGNATURE_PARAMS, make_signature
 
 MAX_BODY = 1024 * 1024
+MAX_DRAIN = 16 * MAX_BODY
 SESSION_ID = re.compile(r"\d{8}-\d{6}(-\d+)?")
+# Only the page served from this machine may talk to the API: a foreign Host header
+# means DNS rebinding, and a non-JSON body means a cross-site form post.
+LOCAL_HOST = re.compile(r"(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?", re.IGNORECASE)
 STATIC_TYPES = {
     "index.html": "text/html; charset=utf-8",
     "style.css": "text/css; charset=utf-8",
@@ -70,6 +74,22 @@ class _Handler(BaseHTTPRequestHandler):
     def _json(self, status: int, obj) -> None:
         self._send(status, json.dumps(obj).encode("utf-8"), "application/json")
 
+    def _discard_body(self, length: int) -> None:
+        """Drain (a bounded amount of) an unused body so the client can read the response."""
+        remaining = min(max(length, 0), MAX_DRAIN)
+        while remaining > 0:
+            chunk = self.rfile.read(min(65536, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+        self.close_connection = True
+
+    def _content_length(self) -> int:
+        try:
+            return max(int(self.headers.get("Content-Length") or 0), 0)
+        except ValueError:
+            return 0
+
     def _read_json(self) -> dict:
         raw = self.headers.get("Content-Length")
         try:
@@ -79,15 +99,12 @@ class _Handler(BaseHTTPRequestHandler):
         if length < 0:
             raise _HttpError(400, "missing or invalid Content-Length")
         if length > MAX_BODY:
-            # Drain a bounded amount so the client can read the response.
-            remaining = min(length, 16 * MAX_BODY)
-            while remaining > 0:
-                chunk = self.rfile.read(min(65536, remaining))
-                if not chunk:
-                    break
-                remaining -= len(chunk)
-            self.close_connection = True
+            self._discard_body(length)
             raise _HttpError(413, "request body too large")
+        media_type = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if media_type != "application/json":
+            self._discard_body(length)
+            raise _HttpError(415, "request body must be sent as Content-Type: application/json")
         try:
             data = json.loads(self.rfile.read(length))
         except (ValueError, UnicodeDecodeError, RecursionError) as e:
@@ -99,6 +116,9 @@ class _Handler(BaseHTTPRequestHandler):
     # -- dispatch --------------------------------------------------------
     def _dispatch(self, method: str) -> None:
         try:
+            if not LOCAL_HOST.fullmatch(self.headers.get("Host") or ""):
+                self._discard_body(self._content_length())
+                raise _HttpError(403, "forbidden: open the page at http://localhost:<port>/")
             self._route(method)
         except _HttpError as e:
             self._json(e.status, {"error": e.message})

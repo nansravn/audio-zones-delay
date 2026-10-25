@@ -148,3 +148,70 @@ def test_player_assets_are_served(server):
     assert app.status == 200
     assert app.getheader("Content-Type").startswith("text/javascript")
     assert b"from './core.mjs'" in app.read()
+
+
+def raw_request(server, method, path, data, headers, skip_host=False):
+    """Send exactly these headers (no default Content-Type, optionally no Host)."""
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    conn.putrequest(method, path, skip_host=skip_host)
+    for key, value in headers.items():
+        conn.putheader(key, value)
+    if data is not None:
+        conn.putheader("Content-Length", str(len(data)))
+    conn.endheaders(data)
+    resp = conn.getresponse()
+    payload = resp.read()
+    conn.close()
+    return resp.status, payload
+
+
+PROFILE_BODY = json.dumps(json.loads(FIXTURE.read_text())["profile"]).encode()
+
+
+@pytest.mark.parametrize("ctype", [None, "text/plain", "application/x-www-form-urlencoded",
+                                   "multipart/form-data; boundary=x", "application/jsonx"])
+def test_body_without_json_content_type_is_415(server, ctype):
+    headers = {} if ctype is None else {"Content-Type": ctype}
+    status, payload = raw_request(server, "PUT", "/api/profile", PROFILE_BODY, headers)
+    assert status == 415 and "error" in json.loads(payload)
+
+
+def test_session_post_without_json_content_type_creates_nothing(server, tmp_path):
+    body = FIXTURE.read_bytes()
+    status, payload = raw_request(server, "POST", "/api/sessions", body, {"Content-Type": "text/plain"})
+    assert status == 415 and "error" in json.loads(payload)
+    assert not (tmp_path / "sessions").exists() or list((tmp_path / "sessions").iterdir()) == []
+
+
+@pytest.mark.parametrize("ctype", ["application/json", "application/json; charset=utf-8",
+                                   "Application/JSON"])
+def test_json_content_type_with_parameters_is_accepted(server, ctype):
+    status, _ = raw_request(server, "PUT", "/api/profile", PROFILE_BODY, {"Content-Type": ctype})
+    assert status == 200
+
+
+@pytest.mark.parametrize("host", ["evil.example", "evil.example:8765", "127.0.0.2:8765",
+                                  "localhost.evil.example", "localhost:80@evil.example", ""])
+def test_foreign_host_is_403(server, host):
+    status, payload = raw_request(server, "GET", "/api/profile", None, {"Host": host},
+                                  skip_host=True)
+    assert status == 403 and "error" in json.loads(payload)
+
+
+def test_foreign_host_cannot_write(server, tmp_path):
+    status, _ = raw_request(server, "PUT", "/api/profile", PROFILE_BODY,
+                            {"Host": "attacker.example", "Content-Type": "application/json"},
+                            skip_host=True)
+    assert status == 403 and not (tmp_path / "profile.json").exists()
+
+
+def test_missing_host_is_403(server):
+    status, payload = raw_request(server, "GET", "/", None, {}, skip_host=True)
+    assert status == 403 and "error" in json.loads(payload)
+
+
+@pytest.mark.parametrize("host", ["localhost", "localhost:8765", "LOCALHOST:1", "127.0.0.1",
+                                  "127.0.0.1:8765", "[::1]", "[::1]:8765"])
+def test_local_hosts_are_allowed(server, host):
+    status, _ = raw_request(server, "GET", "/api/profile", None, {"Host": host}, skip_host=True)
+    assert status == 200
