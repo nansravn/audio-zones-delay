@@ -23,7 +23,7 @@ REPEAT_PASS_MS, REPEAT_WARN_MS = 0.2, 0.5
 A1_PASS_MS, A1_WARN_MS = 1.0, 2.0
 # Zone 2 speakers share one pre-out and one amplifier, so they emit together.
 ZONE2_PASS_MS, ZONE2_WARN_MS = 1.0, 2.0
-MAX_DISTANCE_M = 15.0
+PLAUSIBLE_DISTANCE_M = 15.0  # beyond this, the owner probably typed feet
 DOMINANCE_PASS, DOMINANCE_WARN = 2.0, 1.4
 # A capture this far below the typical one may have locked onto another speaker.
 LOW_LEVEL_DB = 12.0
@@ -129,9 +129,9 @@ def _zone2_consistency(timeline: Timeline, session: SessionLog) -> Check:
 def _distances(session: SessionLog) -> Check:
     large = [(d, s.name) for s in session.profile.speakers
              for d in (s.anthem_distance_m, s.seat_distance_m)
-             if d is not None and d > MAX_DISTANCE_M]
+             if d is not None and d > PLAUSIBLE_DISTANCE_M]
     if not large:
-        return Check("distances", PASS, f"all distances at most {MAX_DISTANCE_M:.0f} m")
+        return Check("distances", PASS, f"all distances at most {PLAUSIBLE_DISTANCE_M:.0f} m")
     listed = ", ".join(f"{d:.1f} m ({name})" for d, name in large)
     return Check("distances", WARN, f"distance {listed} looks too large — enter metres, not feet")
 
