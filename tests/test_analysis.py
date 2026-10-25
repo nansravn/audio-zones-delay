@@ -83,3 +83,38 @@ def test_wrong_session_raises():
     _, rec_a = synth_session(synth.test_profile(), emissions_for(synth.test_profile()), SynthOptions())
     with pytest.raises(AlignmentError):
         analyze(log_b, rec_a)
+
+
+TRUE_DELAYS = {"L": 36.052187, "R": 35.177551}
+
+
+def test_noisy_walks_stay_reliable():
+    r = run(SynthOptions(noise_dbfs=-70.0, walk_noise_dbfs=-50.0))
+    assert len(r.assignment.spurious) >= 10  # the walks do produce noise detections
+    assert r.reliable and delays(r) == pytest.approx(TRUE_DELAYS, abs=0.3)
+
+
+def test_noisy_long_lead_in_stays_reliable():
+    r = run(SynthOptions(noise_dbfs=-70.0, lead_in_s=40.0, lead_in_noise_dbfs=-55.0))
+    assert len(r.assignment.spurious) >= 10
+    assert r.reliable and delays(r) == pytest.approx(TRUE_DELAYS, abs=0.3)
+
+
+@pytest.mark.parametrize("noise_dbfs", [-70.0, -60.0])
+def test_phone_agc_boosting_walks_stays_reliable(noise_dbfs):
+    r = run(SynthOptions(noise_dbfs=noise_dbfs, agc_max_gain_db=20.0))
+    assert r.reliable and delays(r) == pytest.approx(TRUE_DELAYS, abs=0.3)
+
+
+def test_wrong_session_with_noisy_walks_raises():
+    p = synth.test_profile()
+    log_b, _ = synth_session(p, emissions_for(p), SynthOptions(walk_s=7.0))
+    _, rec_a = synth_session(p, emissions_for(p), SynthOptions(noise_dbfs=-70.0, walk_noise_dbfs=-50.0))
+    with pytest.raises(AlignmentError):
+        analyze(log_b, rec_a)
+
+
+def test_silent_speaker_visit_is_assigned_then_no_signal():
+    r = run(SynthOptions(silent_speakers=frozenset({"center"})))
+    assert any(a.visit == 1 for a in r.assignment.assigned)
+    assert r.timeline.no_signal == ["center"]

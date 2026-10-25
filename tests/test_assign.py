@@ -73,3 +73,37 @@ def test_wrong_session_raises():
     log_b, _ = synth_session(profile, emissions_for(profile), SynthOptions(walk_s=7.0))
     with pytest.raises(AlignmentError):
         assign_detections(dets(log_a, SynthOptions(walk_s=4.0)), log_b)
+
+
+def with_slots(log, opts):
+    """Detections of ``dets`` paired with the slot each one belongs to."""
+    arrivals = ideal_arrivals(log, emissions_for(synth.test_profile()), opts)
+    return list(zip(dets(log, opts), [slot for _, slot in arrivals]))
+
+
+def test_weak_detections_are_spurious_and_not_counted():
+    opts = SynthOptions()
+    log = make(opts)
+    dropped = log.attempts[2].slots
+    pairs = with_slots(log, opts)
+    kept = [d for d, slot in pairs if slot not in dropped]
+    # Weak noise peaks (40 dB below the signatures), on the dropped slots and on unlogged grid indices.
+    d0, slot0 = pairs[0]
+    weak = [Detection(d0.time_s + 2.0 * (k - slot0), 0.5, 1.2)
+            for k in dropped + [0, 1, 2, 8, 9, 15, 16, 45, 46]]
+    a = assign_detections(sorted(kept + weak, key=lambda d: d.time_s), log)
+    assert len(a.assigned) == 25 and a.match_ratio == 1.0
+    assert set(weak) <= set(a.spurious)
+    assert a.missing_slots == dropped
+
+
+def test_quiet_visit_of_a_silent_speaker_is_still_assigned():
+    opts = SynthOptions()
+    log = make(opts)
+    owner = {s: a.visit for a in log.attempts for s in a.slots}
+    # Visit 1 (a silent speaker) only picks up the other speakers, about 23 dB down.
+    quiet = 50.0 * 10 ** (-23 / 20)
+    ds = [Detection(d.time_s, quiet if owner[slot] == 1 else 50.0, 20.0)
+          for d, slot in with_slots(log, opts)]
+    a = assign_detections(ds, log)
+    assert sum(x.visit == 1 for x in a.assigned) == 5 and a.spurious == []

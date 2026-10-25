@@ -11,6 +11,10 @@ from .model import SessionLog
 
 _MIN_MATCH_RATIO = 0.8
 _MIN_MATCHED = 3
+# A detection counts as evidence only within this level of the typical signature.
+# Walk and lead-in noise sits 40 dB or more below the signatures; other speakers
+# heard at a silent speaker's visit sit about 23-31 dB below.
+_STRONG_DB = -30.0
 
 
 class AlignmentError(Exception):
@@ -28,9 +32,9 @@ class Assigned:
 @dataclass
 class Assignment:
     assigned: list[Assigned]
-    spurious: list[Detection]
+    spurious: list[Detection]   # weak detections, plus strong ones the log cannot explain
     missing_slots: list[int]
-    match_ratio: float
+    match_ratio: float          # strong matched / strong total
     shift_ambiguous: bool = False
 
 
@@ -44,11 +48,26 @@ def _circular_distance(times: np.ndarray, phase: float, period: float) -> np.nda
     return np.minimum(d, period - d)
 
 
+def _split_by_strength(detections: list[Detection], n_expected: int):
+    """(strong, weak): strong detections are within _STRONG_DB of the typical signature,
+    the median of the ``n_expected`` strongest detections."""
+    strengths = sorted((d.strength for d in detections), reverse=True)
+    ref = float(np.median(strengths[:max(1, n_expected)]))
+    floor = ref * 10 ** (_STRONG_DB / 20)
+    strong = [d for d in detections if d.strength >= floor]
+    weak = [d for d in detections if d.strength < floor]
+    return strong, weak
+
+
 def assign_detections(detections: list[Detection], session: SessionLog) -> Assignment:
     period = session.period_s
     if not detections:
         raise AlignmentError("recording does not match this session")
-    times = np.array([d.time_s for d in detections])
+    n_expected = sum(len(a.slots) for a in session.used_attempts().values())
+    # Weak detections (noise while walking, handling) are never assigned and are not
+    # evidence for or against the alignment.
+    strong, weak = _split_by_strength(detections, n_expected)
+    times = np.array([d.time_s for d in strong])
 
     phase = _phase(times, period)
     near = times[_circular_distance(times, phase, period) <= 0.25 * period]
@@ -65,7 +84,7 @@ def assign_detections(detections: list[Detection], session: SessionLog) -> Assig
     logged = set(slot_owner)
 
     grid_indices = {int(i) for i in n[on_grid]}
-    # On-grid detections at unlogged indices count as unexplained (conservative).
+    # Strong on-grid detections at unlogged indices count as unexplained (conservative).
     scores = {
         k: len({i + k for i in grid_indices} & logged)
         for k in {s - i for s in logged for i in grid_indices}
@@ -84,8 +103,8 @@ def assign_detections(detections: list[Detection], session: SessionLog) -> Assig
     shift = tied[0]
 
     best: dict[int, Detection] = {}
-    spurious: list[Detection] = []
-    for det, idx, ok in zip(detections, n, on_grid):
+    spurious: list[Detection] = list(weak)
+    for det, idx, ok in zip(strong, n, on_grid):
         slot = int(idx) + shift
         if not ok or slot not in logged:
             spurious.append(det)
@@ -105,7 +124,7 @@ def assign_detections(detections: list[Detection], session: SessionLog) -> Assig
     assigned.sort(key=lambda a: a.detection.time_s)
     spurious.sort(key=lambda d: d.time_s)
 
-    match_ratio = len(assigned) / len(detections)
+    match_ratio = len(assigned) / len(strong)
     if match_ratio < _MIN_MATCH_RATIO or len(assigned) < _MIN_MATCHED:
         raise AlignmentError("recording does not match this session")
 

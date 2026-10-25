@@ -24,6 +24,12 @@ NEAR_PATH_M = 0.2
 CLICK_LEAD_S = 0.25
 HOLD_TAIL_S = 0.3
 REDO_WALK_S = 1.0
+# A hold spans from just before the first signature to the end of the last one's tail.
+HOLD_BEFORE_S = 0.3
+HOLD_AFTER_S = 0.9
+AGC_TARGET = 0.1
+AGC_BLOCK_S = 0.01
+AGC_RELEASE_S = 1.5
 
 
 @dataclass(frozen=True)
@@ -41,6 +47,11 @@ class SynthOptions:
     drop_visits: frozenset = frozenset()
     sample_rate: int = 48000
     seed: int = 0
+    walk_noise_dbfs: float | None = None     # extra noise outside the holds (walking, handling)
+    lead_in_noise_dbfs: float | None = None  # extra noise before the session origin
+    agc_max_gain_db: float | None = None     # phone AGC that boosts quiet passages up to this gain
+    zone2_gain_db: float = 0.0               # zone 2 volume relative to zone 1
+    neighbours: tuple = ()                   # (visited speaker, other speaker, distance m) overrides
 
 
 def test_profile() -> RoomProfile:
@@ -131,6 +142,11 @@ def synth_session(profile: RoomProfile, emissions_ms: dict[str, float],
     # Distance of every other speaker, drawn once per (visit, speaker).
     dist = {(v.index, s.id): rng.uniform(3.0, 9.0)
             for v in visits for s in profile.speakers if s.id != v.speaker_id}
+    for visited, other, metres in options.neighbours:
+        for v in visits:
+            if v.speaker_id == visited:
+                dist[(v.index, other)] = metres
+    zone2_level = 10 ** (options.zone2_gain_db / 20)
 
     copies: list[tuple[float, float]] = []  # (arrival in recording time, gain)
     for a in attempts:
@@ -147,6 +163,8 @@ def synth_session(profile: RoomProfile, emissions_ms: dict[str, float],
                 else:
                     r = dist[(a.visit, s.id)]
                     path, gain = r / C, NEAR_PATH_M / r
+                if s.zone == 2:
+                    gain *= zone2_level
                 offset = emissions_ms[s.id] / 1000.0 + path + glitch
                 copies.append((_recording_time(slot, offset, profile.period_s, options), gain))
 
@@ -173,7 +191,42 @@ def synth_session(profile: RoomProfile, emissions_ms: dict[str, float],
         burst = rng.standard_normal(int(0.005 * rate))
         burst *= 0.5 / np.max(np.abs(burst))
         rec[lo:lo + burst.size] += burst[: n_total - lo]
+    if options.walk_noise_dbfs is not None:
+        walking = ~_hold_mask(log, options, n_total)
+        rec[walking] += rng.standard_normal(int(walking.sum())) * 10 ** (options.walk_noise_dbfs / 20)
+    if options.lead_in_noise_dbfs is not None:
+        k = min(n_total, int(options.lead_in_s * rate))
+        rec[:k] += rng.standard_normal(k) * 10 ** (options.lead_in_noise_dbfs / 20)
+    if options.agc_max_gain_db is not None:
+        rec = _agc(rec, options.agc_max_gain_db, rate)
     return log, rec
+
+
+def _hold_mask(session: SessionLog, options: SynthOptions, n_total: int) -> np.ndarray:
+    """True where the phone is held still at a speaker; everything else is walking."""
+    rate, period = options.sample_rate, session.period_s
+    mask = np.zeros(n_total, dtype=bool)
+    for a in session.attempts:
+        lo = _recording_time(a.slots[0], -HOLD_BEFORE_S, period, options)
+        hi = _recording_time(a.slots[-1], HOLD_AFTER_S, period, options)
+        mask[max(0, int(lo * rate)):min(n_total, int(hi * rate))] = True
+    return mask
+
+
+def _agc(rec: np.ndarray, max_gain_db: float, rate: int) -> np.ndarray:
+    """Phone-style automatic gain control: instant attack per 10 ms block, slow release,
+    gain capped at ``max_gain_db``. Quiet walks end up boosted by the full cap."""
+    max_gain = 10 ** (max_gain_db / 20)
+    block = int(AGC_BLOCK_S * rate)
+    release = math.exp(-block / (AGC_RELEASE_S * rate))
+    out = np.empty_like(rec)
+    level = AGC_TARGET / max_gain
+    for i in range(0, rec.size, block):
+        x = rec[i:i + block]
+        peak = float(np.max(np.abs(x)))
+        level = peak if peak > level else release * level + (1 - release) * peak
+        out[i:i + block] = x * min(max_gain, AGC_TARGET / max(level, 1e-9))
+    return out
 
 
 def write_wav(samples: np.ndarray, sample_rate: int, path: Path) -> Path:
