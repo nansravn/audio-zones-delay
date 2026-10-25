@@ -16,3 +16,8 @@ desktop.ini
 .superpowers/
 .worktrees/
 .claude/worktrees/
+
+data/
+__pycache__/
+.venv/
+.pytest_cache/

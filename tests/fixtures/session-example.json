@@ -1,0 +1,24 @@
+{
+  "schema": 1, "session_id": "20261024-211400", "label": "All Channel Stereo, ARC on",
+  "created_at": "2026-10-24T21:14:00Z", "sample_rate": 48000, "period_s": 2.0, "signatures_per_visit": 5,
+  "signature": {"f_start_hz": 300.0, "f_end_hz": 12000.0, "duration_s": 0.5, "fade_s": 0.005, "peak_dbfs": -6.0},
+  "profile": {
+    "schema": 1, "speed_of_sound_m_s": 343.0, "device_latency_ms": 0.0, "signatures_per_visit": 5, "period_s": 2.0,
+    "speakers": [
+      {"id": "front-left", "name": "Front Left", "zone": 1, "measured": true, "anthem_distance_m": 3.6, "seat_distance_m": null, "delay_channel": null},
+      {"id": "rear-left", "name": "Rear Left", "zone": 2, "measured": true, "anthem_distance_m": null, "seat_distance_m": 6.0, "delay_channel": "L"}
+    ]
+  },
+  "visits": [
+    {"index": 0, "speaker_id": "front-left", "closure": false},
+    {"index": 1, "speaker_id": "rear-left", "closure": false},
+    {"index": 2, "speaker_id": "front-left", "closure": true}
+  ],
+  "attempts": [
+    {"visit": 0, "attempt": 1, "slots": [3, 4, 5, 6, 7]},
+    {"visit": 1, "attempt": 1, "slots": [11, 12, 13, 14, 15]},
+    {"visit": 1, "attempt": 2, "slots": [17, 18, 19, 20, 21]},
+    {"visit": 2, "attempt": 1, "slots": [25, 26, 27, 28, 29]}
+  ],
+  "completed": true
+}
