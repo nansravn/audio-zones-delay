@@ -22,7 +22,7 @@ uv sync
 4. Open the URL it prints (`http://localhost:8765/`) in the Windows browser.
 5. Fill in the setup: the speakers (zone, measured or not, Anthem distance for zone 1, seat distance and delay channel for zone 2), a session label, and the timing fields. Click **Save profile**.
 6. Start the phone recorder and leave it running.
-7. Click **Start session** and follow the screen: **MOVE** to the next speaker, click or press Space, **HOLD STILL** while the signatures play, repeat. Press R to redo a speaker. When the screen says **DONE**, stop the recording.
+7. Click **Start session** and follow the screen: **MOVE** to the next speaker, click or press Space, **HOLD STILL** while the signatures play, repeat. After a speaker finishes, press R to go back and redo it; after DONE, R redoes the last (closure) speaker. When the screen says **DONE**, stop the recording.
 8. Copy the recording to the PC.
 9. Run the command shown on the DONE screen, for example `uv run azd analyze data/sessions/<id> <path-to-recording>`.
 10. Open `data/sessions/<id>/report.html`.

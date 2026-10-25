@@ -73,10 +73,9 @@ export function step(state, event) {
     }
     case 'redo': {
       if (state.phase === 'holding') return {state, effects: []};
-      return {
-        state: {...state, phase: 'move', visitIndex: Math.max(0, state.visitIndex - 1)},
-        effects: [],
-      };
+      // From DONE, redo re-records the last (closure) visit; from MOVE it goes back one visit.
+      const visitIndex = state.phase === 'done' ? state.visitIndex : Math.max(0, state.visitIndex - 1);
+      return {state: {...state, phase: 'move', visitIndex}, effects: []};
     }
     default:
       return {state, effects: []};

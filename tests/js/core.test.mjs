@@ -64,7 +64,7 @@ test('step does not mutate its input and ignored events change nothing', () => {
   assert.equal(step(s1, {type:'redo'}).state.visitIndex, 0);
   assert.deepEqual(step(s1, {type:'tick', nowS: 7}).effects, []);
 });
-test('redo at visit 0 stays at 0; redo from done goes back one visit', () => {
+test('redo at visit 0 stays at 0; redo from done keeps the closure visit', () => {
   const s0 = fresh();
   assert.equal(step(s0, {type:'redo'}).state.visitIndex, 0);
   let s = s0;
@@ -73,7 +73,24 @@ test('redo at visit 0 stays at 0; redo from done goes back one visit', () => {
   }
   assert.equal(s.phase, 'done');
   const r = step(s, {type:'redo'}).state;
-  assert.equal(r.phase, 'move'); assert.equal(r.visitIndex, 1);
+  assert.equal(r.phase, 'move'); assert.equal(r.visitIndex, 2);
+});
+test('redo from done re-records the closure visit and finishes again', () => {
+  let s = fresh();
+  for (const [c, t] of [[5.5, 14.9], [21.5, 30.9], [49.5, 58.9]]) {
+    s = step(s, {type:'click', nowS: c}).state; s = step(s, {type:'tick', nowS: t}).state;
+  }
+  s = step(s, {type:'redo'}).state;
+  assert.equal(toSessionLog(s, 'x').completed, false);
+  const clicked = step(s, {type:'click', nowS: 65.5});
+  assert.deepEqual(clicked.effects.map((e) => e.type), ['play', 'save']);
+  s = clicked.state;
+  const end = step(s, {type:'tick', nowS: 200});
+  assert.equal(end.state.phase, 'done');
+  assert.deepEqual(end.effects, [{type:'save'}]);
+  const closure = end.state.attempts.filter((a) => a.visit === 2);
+  assert.deepEqual(closure.map((a) => a.attempt), [1, 2]);
+  assert.equal(toSessionLog(end.state, 'x').completed, true);
 });
 test('progress counts started signatures', () => {
   let {state} = step(fresh(), {type:'click', nowS: 5.5});

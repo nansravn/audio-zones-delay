@@ -232,15 +232,19 @@ function enqueueSave(snapshotState) {
   const s = S;
   const log = toSessionLog(snapshotState, s.sessionId);
   const isFinal = snapshotState.phase === 'done';
-  if (isFinal) s.finalSave = 'saving';
+  const token = {};
+  if (isFinal) {
+    s.finalSave = 'saving';
+    s.finalToken = token;
+  }
   s.saveChain = s.saveChain.then(async () => {
     try {
       await api('PUT', `/api/sessions/${s.sessionId}`, log);
       setProblem('save', null);
-      if (isFinal) s.finalSave = 'ok';
+      if (isFinal && s.finalToken === token) s.finalSave = 'ok';
     } catch (err) {
       setProblem('save', `Session not saved: ${err.message}`);
-      if (isFinal) s.finalSave = `failed: ${err.message}`;
+      if (isFinal && s.finalToken === token) s.finalSave = `failed: ${err.message}`;
     }
   });
 }
@@ -262,9 +266,10 @@ function dispatch(event) {
     if (effect.type === 'play') playAt(effect.timesS);
     else if (effect.type === 'save') enqueueSave(state);
   }
-  if (state.phase === 'done' && S.keepAlive) {
-    S.keepAlive.stop();
-    S.keepAlive = null;
+  if (event.type === 'redo' && state.phase === 'move') {
+    // Leaving DONE: the last "saved" status no longer applies.
+    S.finalSave = 'none';
+    S.finalToken = null;
   }
 }
 
@@ -331,7 +336,7 @@ function render() {
     dom.big.textContent = 'HOLD STILL';
     dom.line1.textContent = `Signature ${Math.max(1, current)} of ${n}`;
     dom.barFill.style.width = `${(current / n) * 100}%`;
-    dom.hint.textContent = 'Clicks are ignored while playing · R = redo this speaker';
+    dom.hint.textContent = 'Clicks are ignored while playing · after this speaker finishes, press R to redo it';
   } else {
     dom.kicker.textContent = 'All speakers captured';
     dom.speaker.textContent = '';
@@ -346,6 +351,8 @@ function render() {
       dom.line1.textContent = `Session not saved: ${S.finalSave.replace(/^failed: /, '')}`;
     }
     dom.command.textContent = `uv run azd analyze data/sessions/${id} <path-to-recording>`;
+    const closure = speakerLabel(st.visits[total - 1].speaker_id);
+    dom.line2.textContent = `Press R to redo ${closure}`;
     dom.hint.textContent = 'Copy the recording to the PC, then run the command above.';
   }
 }
@@ -363,7 +370,7 @@ function onKeyDown(event) {
     event.preventDefault();
     if (!event.repeat) dispatch({type: 'click', nowS: S.ctx.currentTime});
   } else if ((event.key === 'r' || event.key === 'R') && !event.repeat) {
-    if (S.state.phase === 'move') dispatch({type: 'redo'});
+    dispatch({type: 'redo'});
   }
 }
 
@@ -409,7 +416,7 @@ async function startSession() {
       originS,
     });
     const {session_id: sessionId} = await api('POST', '/api/sessions', toSessionLog(state, ''));
-    S = {ctx, buffer, keepAlive, state, sessionId, finalSave: 'none', saveChain: Promise.resolve()};
+    S = {ctx, buffer, keepAlive, state, sessionId, finalSave: 'none', finalToken: null, saveChain: Promise.resolve()};
   } catch (err) {
     if (keepAlive) keepAlive.stop();
     ctx.close();
