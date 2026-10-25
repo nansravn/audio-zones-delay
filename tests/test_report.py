@@ -34,6 +34,19 @@ def test_names_are_escaped():
 def test_silent_zone2_speaker_is_a_missing_channel():
     r = synth.run_analysis(SynthOptions(silent_speakers=frozenset({"rear-right"})))
     text = render_summary(r)
+    assert r.reliable
     assert "no signal" in text.lower()
-    if r.reliable:
-        assert "Delay device outputs needed: 2" in text
+    assert "Delay device outputs needed: 2" in text
+
+
+def test_partial_channel_is_marked():
+    p = synth.test_profile()
+    p.speaker("rear-right").delay_channel = "L"
+    r = synth.run_analysis(SynthOptions(silent_speakers=frozenset({"rear-right"})), profile=p)
+    assert r.reliable
+    dial = next(c for c in r.answers.channels if c.channel == "L").dial_ms
+    text, html = render_summary(r), render_html(r)
+    for out in (text, html):
+        assert "partial:" in out and "Rear Right" in out
+        assert f"{dial:.1f} ms" in out
+    assert "Delay device outputs needed: 1" in text

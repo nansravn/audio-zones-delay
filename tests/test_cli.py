@@ -65,6 +65,20 @@ def test_invalid_session_exits_1(tmp_path, capsys):
     assert capsys.readouterr().err.strip()
 
 
+def test_non_object_session_exits_1(tmp_path, capsys):
+    d, rec = make_session_dir(tmp_path)
+    (d / "session.json").write_text("[]")
+    assert main(["analyze", str(d), str(rec)]) == 1
+    assert capsys.readouterr().err.strip()
+
+
+def test_unwritable_report_exits_1(tmp_path, capsys):
+    d, rec = make_session_dir(tmp_path)
+    (d / "report.html").mkdir()
+    assert main(["analyze", str(d), str(rec)]) == 1
+    assert "report.html" in capsys.readouterr().err
+
+
 def test_mismatched_recording_exits_1(tmp_path, capsys):
     d, _ = make_session_dir(tmp_path)
     other = encode_m4a(np.zeros(48000 * 60), 48000, tmp_path / "silence.m4a")

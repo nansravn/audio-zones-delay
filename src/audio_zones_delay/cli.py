@@ -25,7 +25,7 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
         session = load_session(session_dir / "session.json")
     except FileNotFoundError:
         return _fail(f"no session.json in {session_dir}")
-    except (ValueError, json.JSONDecodeError) as e:
+    except (ValueError, TypeError, AttributeError, json.JSONDecodeError) as e:
         return _fail(f"invalid session.json in {session_dir}: {e}")
     if args.device_latency_ms is not None:
         session.profile.device_latency_ms = args.device_latency_ms
@@ -37,7 +37,10 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     except AlignmentError as e:
         return _fail(f"the recording does not match this session ({e})")
     report_path = session_dir / "report.html"
-    report_path.write_text(render_html(result), encoding="utf-8")
+    try:
+        report_path.write_text(render_html(result), encoding="utf-8")
+    except OSError as e:
+        return _fail(f"cannot write {report_path}: {e}")
     print(render_summary(result, report_path))
     return 0 if result.reliable else 2
 
