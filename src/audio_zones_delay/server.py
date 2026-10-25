@@ -30,7 +30,7 @@ STATIC_TYPES = {
     "core.mjs": "text/javascript; charset=utf-8",
     "app.mjs": "text/javascript; charset=utf-8",
 }
-CLIENT_ERRORS = (ValueError, TypeError, KeyError, AttributeError)
+CLIENT_ERRORS = (ValueError, TypeError, KeyError, AttributeError, RecursionError)
 
 
 class _HttpError(Exception):
@@ -90,7 +90,7 @@ class _Handler(BaseHTTPRequestHandler):
             raise _HttpError(413, "request body too large")
         try:
             data = json.loads(self.rfile.read(length))
-        except (ValueError, UnicodeDecodeError) as e:
+        except (ValueError, UnicodeDecodeError, RecursionError) as e:
             raise _HttpError(400, f"invalid JSON: {e}") from None
         if not isinstance(data, dict):
             raise _HttpError(400, "request body must be a JSON object")

@@ -134,3 +134,8 @@ def test_unknown_route_and_method(server):
     assert r.status == 404 and "error" in json.loads(r.read())
     assert request(server, "DELETE", "/api/profile").status == 405
     assert request(server, "POST", "/api/signature").status == 405
+
+
+def test_deeply_nested_json_is_400(server):
+    r = request(server, "PUT", "/api/profile", raw=b"[" * 200000)
+    assert r.status == 400 and "error" in json.loads(r.read())
